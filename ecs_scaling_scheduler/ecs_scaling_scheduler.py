@@ -89,6 +89,7 @@ def set_service_schedule_scaling_for_period(
         "ResourceId": the_service["target"]["ResourceId"],
         "Schedule": f"at({now.strftime('%Y-%m-%dT%H:%M:%S')})",
         "StartTime": now,
+        "EndTime": now + get_time_delta_from_str("1m"),
         "ScalableTargetAction": {"MinCapacity": min_count, "MaxCapacity": max_count},
     }
     set_scheduled_action_for_service_scaling_target(
@@ -107,6 +108,7 @@ def set_service_schedule_scaling_for_period(
         "ResourceId": the_service["target"]["ResourceId"],
         "Schedule": f"at({restore_time.strftime('%Y-%m-%dT%H:%M:%S')})",
         "StartTime": restore_time,
+        "EndTime": restore_time + get_time_delta_from_str("1m"),
         "ScalableTargetAction": {
             "MinCapacity": the_service["target"]["MinCapacity"],
             "MaxCapacity": the_service["target"]["MaxCapacity"],
