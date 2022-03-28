@@ -82,26 +82,26 @@ conform	: ## Conform to a standard of coding syntax
 python39	: clean
 			test -d layer && rm -rf layer || mkdir layer
 			docker run -u $(shell bash -c 'id -u'):$(shell bash -c 'id -u') \
-			--rm -it -v $(PWD):/opt --entrypoint /bin/bash \
+			--rm -it -v $(PWD):/app --entrypoint /bin/bash \
 			public.ecr.aws/compose-x/python:3.9 \
-			-c "pip install -r /opt/dist/*.whl -t /opt/layer"
+			-c "pip install -r /app/dist/*.whl -t /app/layer"
 
 python38	: clean
 			test -d layer && rm -rf layer || mkdir layer
 			docker run -u $(shell bash -c 'id -u'):$(shell bash -c 'id -u') \
-			--rm -it -v $(PWD):/opt --entrypoint /bin/bash \
+			--rm -it -v $(PWD):/app --entrypoint /bin/bash \
 			public.ecr.aws/compose-x/python:3.8 \
-			-c "pip install  /opt/dist/*.whl -t /opt/layer"
+			-c "pip install  /app/dist/*.whl -t /app/layer"
 
 python37	: clean
 			test -d layer && rm -rf layer || mkdir layer
 			docker run -u $(shell bash -c 'id -u'):$(shell bash -c 'id -u') \
-			--rm -it -v $(PWD):/opt --entrypoint /bin/bash \
+			--rm -it -v $(PWD):/app --entrypoint /bin/bash \
 			public.ecr.aws/compose-x/python:3.7 \
-			-c "ls dist ; pip install /opt/dist/*.whl -t /opt/layer"
+			-c "ls dist ; pip install /app/dist/*.whl -t /app/layer"
 
 
-dist:		clean ## builds source and wheel package
+dist:		clean conform ## builds source and wheel package
 			poetry build
 
 package:	dist $(PYTHON_VERSION)

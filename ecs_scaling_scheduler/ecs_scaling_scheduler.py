@@ -12,7 +12,8 @@ from compose_x_common.aws.ecs import (
     describe_all_services,
     list_all_services,
 )
-from compose_x_common.compose_x_common import get_duration, keyisset
+from compose_x_common.compose_x_common import get_duration as get_time_delta_from_str
+from compose_x_common.compose_x_common import get_future_time_delta, keyisset
 
 
 def set_scheduled_action_for_service_scaling_target(
@@ -41,22 +42,22 @@ def set_scheduled_action_for_service_scaling_target(
 
 
 def set_service_schedule_scaling_for_period(
-    action_name,
-    service_name,
-    cluster_name,
-    min_count,
-    max_count,
-    duration,
+    service_name: str,
+    cluster_name: str,
+    min_count: int,
+    max_count: int,
+    duration: str = None,
+    action_name: str = None,
     session=None,
 ):
     """
     Function to set the scalable schedule for a given period of time (duration) from now
-    :param str action_name:
     :param str service_name:
     :param str cluster_name:
     :param int min_count:
     :param int max_count:
     :param str duration:
+    :param str action_name:
     :param boto3.session.Session session:
     :return:
     """
@@ -65,26 +66,43 @@ def set_service_schedule_scaling_for_period(
 
     services = list_all_services(cluster_name, session=session)
     services_definition = describe_all_services(
-        services, cluster_name, session=session, as_map=True, include=["TAGS"]
+        services, cluster_name, session=session, return_as_map=True, include=["TAGS"]
     )
     if service_name not in services_definition.keys():
-        raise LookupError(f"Service {service_name} not found in ")
+        raise LookupError(f"Service {service_name} not found in {cluster_name}")
     the_service = services_definition[service_name]
     map_ecs_services_with_scalable_targets([the_service], session=session)
+    del the_service["deployments"]
+    del the_service["events"]
+
     now = dt.utcnow()
+    if not action_name:
+        api_action_name = f"{cluster_name}-{service_name}-onetime-scaling"
+    else:
+        api_action_name = action_name
     args = {
         "ServiceNamespace": "ecs",
-        "ScheduledActionName": action_name,
+        "ScheduledActionName": action_name
+        if action_name
+        else f"{api_action_name}__set",
         "ScalableDimension": "ecs:service:DesiredCount",
         "ResourceId": the_service["target"]["ResourceId"],
         "Schedule": f"at({now.strftime('%Y-%m-%dT%H:%M:%S')})",
         "StartTime": now,
         "ScalableTargetAction": {"MinCapacity": min_count, "MaxCapacity": max_count},
     }
-    restore_time = get_duration(now, duration)
+    set_scheduled_action_for_service_scaling_target(
+        the_service, session=session, **args
+    )
+    if not duration:
+        return
+    restore_time_delta = get_time_delta_from_str(duration)
+    restore_time = get_future_time_delta(now, restore_time_delta)
     restore_args = {
         "ServiceNamespace": "ecs",
-        "ScheduledActionName": f"{action_name}__restore",
+        "ScheduledActionName": action_name
+        if action_name
+        else f"{api_action_name}__restore",
         "ScalableDimension": "ecs:service:DesiredCount",
         "ResourceId": the_service["target"]["ResourceId"],
         "Schedule": f"at({restore_time.strftime('%Y-%m-%dT%H:%M:%S')})",
@@ -94,9 +112,6 @@ def set_service_schedule_scaling_for_period(
             "MaxCapacity": the_service["target"]["MaxCapacity"],
         },
     }
-    set_scheduled_action_for_service_scaling_target(
-        the_service, session=session, **args
-    )
     set_scheduled_action_for_service_scaling_target(
         the_service, session=session, **restore_args
     )
@@ -118,3 +133,6 @@ def map_ecs_services_with_scalable_targets(services_list=None, session=None):
         for target in ecs_targets:
             if target["ResourceId"] == target_id:
                 service["target"] = target
+                break
+        else:
+            raise LookupError(f"Failed to find the target scaling for {name}")

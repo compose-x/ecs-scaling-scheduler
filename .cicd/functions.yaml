@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description:
+  Lambda Function to allow Changing the ECS DesiredCount of a service via ApplicationAutoScaling, one-time.
+
+Transform:
+  - AWS::Serverless-2016-10-31
+
+Metadata:
+  Maintainer: john@compose-x.io
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Parameters:
+          - LambdaLayerVersionArn
+        Label:
+          default: Lambda Settings
+      - Parameters:
+          - PermissionsBoundary
+        Label:
+          default: IAM Settings
+
+
+Parameters:
+  PermissionsBoundary:
+    Type: String
+    Default: none
+    Description: IAM Policy ARN to use for PermissionsBoundary if required. Optional.
+
+  LambdaLayerVersionArn:
+    Type: String
+    Description: Lambda Layer ARN to use with the function(s)
+
+  FunctionsPrefix:
+    Type: String
+    Default: ecsScalingScheduler
+
+Conditions:
+  PermissionsBoundaryCon: !Not [!Equals [!Ref PermissionsBoundary, "none"]]
+  OverrideFunctionName: !Not [!Equals [!Ref FunctionsPrefix, "none"]]
+
+Resources:
+  ###############################################
+  # ECS One-Time
+
+  ecsScalingSchedulerPolicy:
+    DependsOn: ecsOneTimeSchedulerFunctionRole
+    Type: AWS::IAM::Policy
+    Properties:
+      Roles:
+        - !Ref ecsOneTimeSchedulerFunctionRole
+      PolicyName: "ECSScheduler"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: DescribeAllEcs
+            Effect: Allow
+            Action:
+              - ecs:Describe*
+              - ecs:List*
+              - ecs:Get*
+            Resource:
+              - "*"
+          - Sid: ScalingPolicyActions
+            Effect: Allow
+            Action:
+              - "application-autoscaling:Describe*"
+              - "application-autoscaling:PutScheduledAction"
+              - "application-autoscaling:DeleteScheduledAction"
+            Resource:
+              - "*"
+
+  ecsOneTimeSchedulerFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Condition:
+              Bool:
+                aws:SecureTransport: 'true'
+            Effect: Allow
+            Principal:
+              Service:
+                - !Sub 'lambda.${AWS::URLSuffix}'
+        Version: '2012-10-17'
+      Description: !Sub 'ecsOneTimeSchedulerFunctionRole-${AWS::StackName}'
+      PermissionsBoundary: !If
+        - PermissionsBoundaryCon
+        - !Ref PermissionsBoundary
+        - !Ref AWS::NoValue
+
+
+  ecsOneTimeAtScalingScheduler:
+    Type: AWS::Serverless::Function
+    Properties:
+      Tags:
+        Name: ecs-scaling-scheduler-onetime-at-action
+        Source: https://github.com/compose-x/ecs-scaling-scheduler
+      FunctionName: !If
+        - OverrideFunctionName
+        - !Sub '${FunctionsPrefix}-OneTimeScheduler'
+        - cfn-kafka-admin-Topics
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Timeout: 60
+      Role: !GetAtt ecsOneTimeSchedulerFunctionRole.Arn
+      Layers:
+        - !Ref LambdaLayerVersionArn
+      InlineCode: |
+        #!/usr/bin/env python
+        from ecs_scaling_scheduler.aws_lambda_functions import one_time_set_ecs_set_desired_count as handler
+
+
+        def lambda_handler(event, context):
+            """ Entry point function """
+            return handler(event, context)
+
+Outputs:
+  oneTimeSchedulerFunctionArn:
+    Value: !GetAtt ecsOneTimeAtScalingScheduler.Arn
+
+  oneTimeSchedulerFunctionName:
+    Value: !Ref "ecsOneTimeAtScalingScheduler"
