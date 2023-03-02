@@ -2,6 +2,8 @@
 #  SPDX-License-Identifier: MPL-2.0
 #  Copyright 2020-2021 John Mille <john@compose-x.io>
 
+import logging
+from os import environ
 from copy import deepcopy
 from datetime import datetime as dt
 
@@ -14,6 +16,16 @@ from compose_x_common.aws.ecs import (
 )
 from compose_x_common.compose_x_common import get_duration as get_time_delta_from_str
 from compose_x_common.compose_x_common import get_future_time_delta, keyisset
+from compose_x_common.aws import get_session
+
+
+LOG = logging.getLogger(__name__)
+try:
+    logging.getLogger().setLevel(environ.get("LOG_LEVEL", "ERROR").upper())
+except Exception as error:
+    print(error)
+    print("Falling back to INFO logging")
+    logging.getLogger().setLevel(logging.INFO)
 
 
 def set_scheduled_action_for_service_scaling_target(
@@ -26,8 +38,7 @@ def set_scheduled_action_for_service_scaling_target(
     :param boto3.session.Session session:
     :return:
     """
-    if session is None:
-        session = Session()
+    session = get_session(session)
     client = session.client("application-autoscaling")
     args = deepcopy(kwargs)
     args["ServiceNamespace"] = "ecs"
@@ -82,7 +93,7 @@ def set_service_schedule_scaling_for_period(
         api_action_name = action_name
     args = {
         "ServiceNamespace": "ecs",
-        "ScheduledActionName": action_name
+        "ScheduledActionName": f"{action_name}__set"
         if action_name
         else f"{api_action_name}__set",
         "ScalableDimension": "ecs:service:DesiredCount",
@@ -96,13 +107,14 @@ def set_service_schedule_scaling_for_period(
         the_service, session=session, **args
     )
     if not duration:
+        LOG.info("No defined duration.")
         return
     restore_time_delta = get_time_delta_from_str(duration)
     restore_time = get_future_time_delta(now, restore_time_delta)
     restore_args = {
         "ServiceNamespace": "ecs",
         "ScheduledActionName": action_name
-        if action_name
+        if f"{action_name}__restore"
         else f"{api_action_name}__restore",
         "ScalableDimension": "ecs:service:DesiredCount",
         "ResourceId": the_service["target"]["ResourceId"],

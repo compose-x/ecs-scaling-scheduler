@@ -21,6 +21,6 @@ Resources:
       CompatibleRuntimes:
         - python3.8
       ContentUri: ${S3_LAYER_UPLOAD_PATH}
-      Description: Kafka resources library for AWS CFN
+      Description: ECS Scaling Scheduler helpers
       LayerName: ecs-scaling-scheduler
       LicenseInfo: MPL-2.0
